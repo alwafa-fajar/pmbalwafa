@@ -41,16 +41,17 @@
       (terbaru.length ? tabelProgram(terbaru, true) : emptyBox('megaphone', 'Belum ada kegiatan', 'Buka salah satu kategori lalu tambahkan kegiatan pertama.')) + '</div>';
   }
   function tabelProgram(rows, denganJenis) {
-    const admin = isAdmin(), J = {}; jenisList().forEach(j => { J[j.id] = j; });
+    const admin = true, J = {}; jenisList().forEach(j => { J[j.id] = j; });                 // v1.1: Admin & Tim PMB boleh ubah
+    const hapusBtn = p => (isAdmin() || p.dibuat_oleh === App.user.username) ? '<button class="btn btn-ghost btn-icon sm" data-act="hapus" data-id="' + p.id + '" aria-label="Hapus">' + ic('trash-2', 'sm') + '</button>' : '';
     return '<div class="table-wrap desk-only"><table class="t"><thead><tr><th>Nama kegiatan / platform</th>' + (denganJenis ? '<th>Kategori</th>' : '') + '<th>Tanggal</th><th class="r">Biaya</th><th>Hasil / capaian</th><th>Status</th><th>Bukti</th>' + (admin ? '<th></th>' : '') + '</tr></thead><tbody>' +
       rows.map(p => '<tr><td><div class="nm">' + esc(p.nama_kegiatan) + '</div><div class="sm">' + esc(p.platform_atau_lokasi || '') + '</div></td>' + (denganJenis ? '<td><span class="badge b-peach plain">' + esc((J[p.jenis] || {}).label || p.jenis) + '</span></td>' : '') +
         '<td class="small">' + rentang(p) + '</td><td class="r bold">' + F.rp(p.biaya) + '</td><td class="small" style="max-width:240px">' + esc(p.hasil || '-') + '</td><td>' + stBadge(p.status_efektif) + '</td>' +
         '<td>' + (p.bukti_file_id ? '<button class="attach" data-act="bukti" data-id="' + esc(p.bukti_file_id) + '" data-nama="' + esc(p.bukti_nama) + '">' + ic(/pdf/.test(p.bukti_mime) ? 'file-text' : 'image', 'sm') + 'Lihat bukti</button>' : '<span class="muted small">Belum ada</span>') + '</td>' +
-        (admin ? '<td class="r" style="white-space:nowrap"><button class="btn btn-ghost btn-icon sm" data-act="edit" data-id="' + p.id + '" aria-label="Ubah">' + ic('pencil', 'sm') + '</button><button class="btn btn-ghost btn-icon sm" data-act="hapus" data-id="' + p.id + '" aria-label="Hapus">' + ic('trash-2', 'sm') + '</button></td>' : '') + '</tr>').join('') + '</tbody></table></div>' +
+        (admin ? '<td class="r" style="white-space:nowrap"><button class="btn btn-ghost btn-icon sm" data-act="edit" data-id="' + p.id + '" aria-label="Ubah">' + ic('pencil', 'sm') + '</button>' + hapusBtn(p) + '</td>' : '') + '</tr>').join('') + '</tbody></table></div>' +
       '<div class="mlist" style="padding:0 12px 12px">' + rows.map(p => '<div class="mcard"><div class="top"><div><div class="nm" style="font-size:15px">' + esc(p.nama_kegiatan) + '</div><div class="sub">' + (denganJenis ? esc((J[p.jenis] || {}).label || '') + ' · ' : '') + rentang(p) + '</div></div>' + stBadge(p.status_efektif) + '</div>' +
         '<div class="kv"><div><span>Biaya</span><b>' + F.rp(p.biaya) + '</b></div><div><span>Platform / lokasi</span><b>' + esc(p.platform_atau_lokasi || '-') + '</b></div><div style="grid-column:1/-1"><span>Hasil</span><b>' + esc(p.hasil || '-') + '</b></div></div>' +
         '<div class="row">' + (p.bukti_file_id ? '<button class="attach" data-act="bukti" data-id="' + esc(p.bukti_file_id) + '" data-nama="' + esc(p.bukti_nama) + '">' + ic('eye', 'sm') + 'Bukti</button>' : '') +
-        (admin ? '<span style="margin-left:auto"></span><button class="btn btn-ghost btn-icon sm" data-act="edit" data-id="' + p.id + '" aria-label="Ubah">' + ic('pencil', 'sm') + '</button><button class="btn btn-ghost btn-icon sm" data-act="hapus" data-id="' + p.id + '" aria-label="Hapus">' + ic('trash-2', 'sm') + '</button>' : '') + '</div></div>').join('') + '</div>';
+        (admin ? '<span style="margin-left:auto"></span><button class="btn btn-ghost btn-icon sm" data-act="edit" data-id="' + p.id + '" aria-label="Ubah">' + ic('pencil', 'sm') + '</button>' + hapusBtn(p) : '') + '</div></div>').join('') + '</div>';
   }
   function saring(j) {
     const q = st.q.toLowerCase();
@@ -63,7 +64,7 @@
     const cnt = s => semua.filter(p => p.status_efektif === s).length;
     el.querySelector('[data-r="isi"]').innerHTML = '<a href="#/program" class="small" style="display:inline-flex;gap:6px;align-items:center;margin-bottom:12px">' + ic('arrow-left', 'sm') + 'Program PMB Hub</a>' +
       pageHead({ pill: j.label || 'Program', eyebrow: ['TA ' + (S().TAHUN_AKADEMIK || '')], title: j.nama, lead: j.deskripsi,
-        actions: '<button class="btn btn-white" data-act="excel-jenis" data-id="' + esc(j.id) + '">' + ic('file-spreadsheet') + 'Unduh Excel</button>' + (admin ? '<button class="btn btn-primary" data-act="baru" data-id="' + esc(j.id) + '">' + ic('plus') + 'Tambah Kegiatan</button>' : '') }) +
+        actions: '<button class="btn btn-white" data-act="excel-jenis" data-id="' + esc(j.id) + '">' + ic('file-spreadsheet') + 'Unduh Excel</button>' + (true ? '<button class="btn btn-primary" data-act="baru" data-id="' + esc(j.id) + '">' + ic('plus') + 'Tambah Kegiatan</button>' : '') }) +
       '<div class="stat-row"><div class="stat"><div class="ico">' + ic(j.ikon || 'shapes') + '</div><div><div class="lbl">Jumlah kegiatan</div><div class="val">' + semua.length + '</div></div></div>' +
       '<div class="stat"><div class="ico">' + ic('wallet') + '</div><div style="flex:1"><div class="lbl">Total biaya</div><div class="val hero">' + F.rp(b) + '</div>' + (j.anggaran ? '<div class="small muted">' + F.pct(b, j.anggaran) + ' dari anggaran ' + F.rp(j.anggaran) + '</div>' : '') + '</div></div>' +
       '<div class="stat"><div class="ico">' + ic('play') + '</div><div><div class="lbl">Berjalan</div><div class="val">' + cnt('Berjalan') + '</div></div></div>' +
@@ -78,7 +79,7 @@
     const j = jenisList().find(x => x.id === jid), box = el.querySelector('[data-r="tabel"]'); if (!j || !box) return;
     const rows = saring(j);
     box.innerHTML = rows.length ? tabelProgram(rows, false) + '<div class="table-foot"><span>' + rows.length + ' kegiatan · total ' + F.rp(rows.reduce((a, p) => a + p.biaya, 0)) + '</span></div>'
-      : emptyBox(j.ikon || 'shapes', 'Belum ada kegiatan', isAdmin() ? 'Tambahkan kegiatan ' + j.nama.toLowerCase() + ' beserta bukti pelaksanaannya.' : 'Kegiatan akan tampil setelah Admin mencatatnya.', isAdmin() ? '<button class="btn btn-primary" data-act="baru" data-id="' + esc(j.id) + '">' + ic('plus') + 'Tambah Kegiatan</button>' : '');
+      : emptyBox(j.ikon || 'shapes', 'Belum ada kegiatan', 'Tambahkan kegiatan ' + j.nama.toLowerCase() + ' beserta bukti pelaksanaannya.', true ? '<button class="btn btn-primary" data-act="baru" data-id="' + esc(j.id) + '">' + ic('plus') + 'Tambah Kegiatan</button>' : '');
   }
   async function aksi(b, el) {
     const a = b.dataset.act, id = b.dataset.id;
@@ -94,9 +95,14 @@
       const r = await api('programHapus', { id }); toast(r.message, r.success ? 'ok' : 'err');
     }
     if (a === 'excel-jenis' || a === 'excel-semua') {
-      const J = a === 'excel-jenis' ? jenisList().filter(x => x.id === id) : jenisList(), KOL = ['No', 'Nama Kegiatan', 'Platform / Lokasi', 'Tanggal Mulai', 'Tanggal Selesai', 'Biaya', 'Hasil', 'Status', 'Catatan', 'Bukti', 'Dibuat Oleh'];
-      const sheets = J.map(j => { const rows = progList().filter(p => p.jenis === j.id);
-        return { nama: j.nama, aoa: [KOL].concat(rows.map((p, i) => [i + 1, p.nama_kegiatan, p.platform_atau_lokasi, p.tanggal_mulai, p.tanggal_selesai, p.biaya, p.hasil, p.status_efektif, p.catatan, p.bukti_nama ? 'Ada (' + p.bukti_nama + ')' : '-', p.dibuat_oleh]),
+      const J = a === 'excel-jenis' ? jenisList().filter(x => x.id === id) : jenisList(), KOL = ['No', 'Nama Kegiatan', 'Platform / Lokasi', 'Tanggal Mulai', 'Tanggal Selesai', 'Biaya', 'Hasil', 'Status', 'Catatan', 'Bukti (buka di aplikasi)', 'Bukti di Google Drive', 'Dibuat Oleh'];
+      const dasar = (S().APP_URL ? S().APP_URL.replace(/\/?$/, '/') : location.href.split('#')[0]);
+      const sheets = J.map(j => { const rows = progList().filter(p => p.jenis === j.id), links = [];
+        rows.forEach((p, i) => { if (!p.bukti_file_id) return;
+          links.push({ r: i + 1, c: 9, url: dasar + '#/bukti/' + encodeURIComponent(p.bukti_file_id), tip: 'Buka bukti di aplikasi (perlu login)' });
+          links.push({ r: i + 1, c: 10, url: 'https://drive.google.com/file/d/' + p.bukti_file_id + '/view', tip: 'Buka di Google Drive (akun pemilik folder)' }); });
+        return { nama: j.nama, links, aoa: [KOL].concat(rows.map((p, i) => [i + 1, p.nama_kegiatan, p.platform_atau_lokasi, p.tanggal_mulai, p.tanggal_selesai, p.biaya, p.hasil, p.status_efektif, p.catatan,
+          p.bukti_file_id ? '🔗 Lihat bukti — ' + (p.bukti_nama || 'berkas') : '-', p.bukti_file_id ? '🔗 Google Drive' : '-', p.dibuat_oleh]),
           [[], ['', 'TOTAL', '', '', '', rows.reduce((s, p) => s + p.biaya, 0)], ['', 'ANGGARAN', '', '', '', Number(j.anggaran) || 0]]) }; });
       unduhXlsx('Laporan-Program-PMB-' + (a === 'excel-jenis' ? id + '-' : '') + tglFile() + '.xlsx', sheets, 'Laporan Program PMB');
     }
@@ -151,3 +157,21 @@
     if (j.id) $('#jDel').onclick = async () => { const r = await api('jenisHapus', { id: j.id }); toast(r.message, r.success ? 'ok' : 'err'); if (r.success) { m.close(); go('program'); } };
   }
 })();
+
+/* ===== v1.1 — halaman bukti (tujuan tautan di Excel): #/bukti/<id berkas> ===== */
+registerPage('bukti', {
+  title: 'Bukti Kegiatan', deps: [],
+  template: () => '<div data-r="isi"></div>',
+  async render(el, id) {
+    const box = el.querySelector('[data-r="isi"]'), p = (App.data.program || []).find(x => x.bukti_file_id === id);
+    box.innerHTML = '<a href="#/program' + (p ? '/' + encodeURIComponent(p.jenis) : '') + '" class="small" style="display:inline-flex;gap:6px;align-items:center;margin-bottom:12px">' + ic('arrow-left', 'sm') + 'Kembali ke Program PMB</a>' +
+      pageHead({ pill: 'Bukti kegiatan', title: p ? p.nama_kegiatan : 'Bukti kegiatan', lead: p ? [p.platform_atau_lokasi, F.tgl(p.tanggal_mulai), F.rp(p.biaya), p.hasil].filter(Boolean).join(' · ') : '' }) +
+      '<div class="card card-pad" data-r="berkas"><div class="empty"><span class="spin"></span><div>Memuat bukti…</div></div></div>';
+    const r = await api('berkasAmbil', { id }), b = box.querySelector('[data-r="berkas"]');
+    if (!r.success) { b.innerHTML = '<div class="callout bad">' + ic('circle-x') + esc(r.message) + '</div>'; return; }
+    const d = r.data, url = URL.createObjectURL(b64Blob(d.base64, d.mime));
+    b.innerHTML = (/^image\//.test(d.mime) ? '<img class="preview-img" src="' + url + '" alt="' + esc(d.nama) + '">' : d.mime === 'application/pdf' ? '<iframe class="preview-pdf" src="' + url + '" title="' + esc(d.nama) + '"></iframe>' : '<div class="callout info">' + ic('info') + 'Pratinjau tidak tersedia untuk jenis berkas ini.</div>') +
+      '<div class="row mt16"><span class="small muted">' + esc(d.nama) + '</span><button class="btn btn-soft btn-sm" style="margin-left:auto" data-unduh>' + ic('download', 'sm') + 'Unduh</button></div>';
+    b.querySelector('[data-unduh]').onclick = () => unduhB64(d.nama, d.mime, d.base64);
+  }
+});

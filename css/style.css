@@ -482,3 +482,29 @@ tr.bad td { background: #FFF4F2 !important; } tr.warn td { background: #FFFBEF !
 .divider { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
 .pin-input { letter-spacing: .5em; text-align: center; font-size: 22px; font-weight: 700; }
 .qr-box { display: grid; justify-items: center; gap: 8px; }
+
+/* ============================ v1.1 ============================ */
+.jalur-grid.n1 { grid-template-columns: minmax(0, 1fr); } .jalur-grid.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .jalur-grid.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.irows { display: grid; gap: 6px; } .irows .pcell { font-size: 12px; padding: 7px 9px; }
+@media (max-width: 768px) { .jalur-grid.n1, .jalur-grid.n2, .jalur-grid.n3, .jalur-grid.n4 { grid-template-columns: minmax(0, 1fr); } .irows { grid-template-columns: 1fr 1fr; } .irows .pcell { display: flex; } }
+.tl-card .phase-top { align-items: center; flex-wrap: wrap; }
+.todo-list { display: grid; gap: 6px; margin-top: 10px; }
+.todo { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 9px 10px; border-radius: 12px; background: rgba(255,255,255,.75); border: 1px solid var(--border-soft); cursor: pointer; }
+.todo:hover { border-color: #EBCDB7; }
+.todo .check { min-height: 0; margin-top: 1px; }
+.todo .tt { display: block; font-size: 13px; line-height: 19px; font-weight: 600; color: var(--text); white-space: pre-line; }
+.todo small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.todo.done .tt { color: var(--muted); text-decoration: line-through; text-decoration-color: #B9A99C; }
+.decision .todo { background: #fff; }
+.g-half { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 1100px) { .g-half { grid-template-columns: minmax(0, 1fr); } }
+.poin-ed { display: grid; gap: 8px; margin-bottom: 6px; }
+.poin-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.poin-row .check { min-height: 0; }
+.kol-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 10px; }
+.kol-card { border: 1.5px solid var(--border); border-radius: 14px; padding: 10px; background: var(--surface); min-width: 0; }
+.kol-card label { font-size: 12px; font-weight: 700; color: var(--primary-dark); }
+.kol-card .textarea { min-height: 120px; margin-top: 6px; padding: 8px 10px; font-size: 12px; line-height: 18px; white-space: pre; overflow-x: auto; }
+.kol-card.isi { border-color: #BFDCC8; background: #FAFFFB; } .kol-card.beda { border-color: #E9C25A; background: #FFFCF0; }
+mark { background: var(--warn-bg); color: var(--bad-fg); border-radius: 4px; padding: 0 2px; }
+@media (max-width: 768px) { .kol-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kol-card .textarea { min-height: 96px; } }

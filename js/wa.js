@@ -2,13 +2,20 @@
 'use strict';
 (function () {
   const RESP = [['Belum Tes', 'Prioritas 1', 'Belum Ikut Tes', '--butter-bg', '--butter-fg'], ['Belum Daftar Ulang', 'Tahap 2', 'Belum Registrasi', '--blue-bg', '--blue-fg'],
-    ['Mengundurkan Diri', 'Follow-up', 'Undur Diri', '--rose-bg', '--rose-fg'], ['Umum', 'Semua', 'Semua Pendaftar', '--cream-bg', '--cream-fg']];
+    ['Mengundurkan Diri', 'Follow-up', 'Undur Diri', '--rose-bg', '--rose-fg'], ['Sudah Registrasi', 'Grup & Bayar', 'Sudah Registrasi', '--sage-bg', '--sage-fg'],
+    ['Umum', 'Semua', 'Semua Pendaftar', '--cream-bg', '--cream-fg']];
+  /* v1.1: kelompok "Sudah Registrasi" = registrasi bertanda & bukan undur diri; sub-filter status bayar untuk pengingat */
+  const BAYAR = [['', 'Semua'], ['pangkal', 'Belum Uang Pangkal'], ['ukt', 'Belum bayar UKT'], ['lunas', 'Belum lunas']];
+  const cocokRespon = (p, r) => r === 'Umum' || (r === 'Sudah Registrasi' ? (p.f.D && !p.f.U && (!B.bayar || (B.bayar === 'pangkal' && !p.f.P) || (B.bayar === 'ukt' && !p.f.K) || (B.bayar === 'lunas' && !p.f.L))) : p.respon === r);
+  const varKosong = t => Array.from(new Set((String(t || '').match(/\{(\w+)\}/g) || [])));
   const B = { respon: 'Belum Tes', jalur: new Set(), prodi: new Set(), ids: null, kontak: null, hanyaWA: false, kecuali: new Set(), templatId: '', pesan: '', judul: '',
-    batch: 0, jeda: '', konfirmasi: false, yakin: false, auto: true, next: 0, lihat: false };
+    batch: 0, jeda: '', konfirmasi: false, yakin: false, auto: true, next: 0, lihat: false, bayar: '' };
   const W = () => App.data.wa || { templat: [], blast: [], optout: [], kuota: {} };
   const vars = p => Object.assign({}, jsonS('VARIABEL_PESAN', {}), { institusi: S().NAMA_INSTITUSI, tahun_akademik: S().TAHUN_AKADEMIK, gelombang: S().GELOMBANG_AKTIF, link: S().APP_URL,
     nama: p.nama || 'Bapak/Ibu', prodi: p.prodi || '', prodi_lengkap: prodiLabel(p.prodi), jalur: p.jalur || '', respon: p.respon || '', asrama: p.asrama || '' });
   const isiVar = (t, v) => String(t || '').replace(/\{(\w+)\}/g, (m, k) => v[k] == null ? m : String(v[k]));
+  const waFmtTanda = t => { const ada = []; const s = String(t || '').replace(/\{(\w+)\}/g, (m, k) => { ada.push(k); return '\u0001' + (ada.length - 1) + '\u0002'; });
+    return waFmt(s).replace(/\u0001(\d+)\u0002/g, (m, i) => '<mark title="Belum ada nilai">{' + esc(ada[+i]) + '}</mark>'); };
   const waFmt = t => esc(t).replace(/\*([^*\n]+)\*/g, '<b>$1</b>').replace(/_([^_\n]+)_/g, '<i>$1</i>').replace(/~([^~\n]+)~/g, '<s>$1</s>');
   const rataJeda = j => { const p = String(j || '8-15').split('-').map(Number); return p.length > 1 ? (p[0] + p[1]) / 2 : (p[0] || 5); };
   const blastAktif = () => W().blast.find(b => b.status === 'Berjalan');
@@ -31,7 +38,8 @@
     template: () => '<div data-r="head"></div><div data-r="progres"></div><div class="stepper" data-r="step"></div><div class="grid g-side-wide"><div class="stack" style="gap:22px" data-r="kiri"></div><div class="stack sticky" style="gap:16px" data-r="kanan"></div></div>',
     mount(el) {
       delegate(el, 'click', '[data-act]', b => aksi(el, b));
-      delegate(el, 'click', '[data-resp]', b => { B.respon = b.dataset.resp; B.ids = null; B.kontak = null; B.kecuali.clear(); pilihTemplatBawaan(); renderKiri(el); renderKanan(el); });
+      delegate(el, 'click', '[data-bayar]', b => { B.bayar = b.dataset.bayar; B.kecuali.clear(); renderKiri(el); renderKanan(el); });
+      delegate(el, 'click', '[data-resp]', b => { B.respon = b.dataset.resp; B.bayar = ''; B.ids = null; B.kontak = null; B.kecuali.clear(); pilihTemplatBawaan(); renderKiri(el); renderKanan(el); });
       delegate(el, 'click', '[data-jalur]', b => { tog(B.jalur, b.dataset.jalur); renderKiri(el); renderKanan(el); });
       delegate(el, 'click', '[data-prodi]', b => { tog(B.prodi, b.dataset.prodi); renderKiri(el); renderKanan(el); });
       delegate(el, 'click', '[data-var]', b => { const t = $('#bPesan'); const s = t.selectionStart || t.value.length; t.value = t.value.slice(0, s) + b.dataset.var + t.value.slice(t.selectionEnd || s); t.focus(); t.selectionStart = t.selectionEnd = s + b.dataset.var.length; B.pesan = t.value; renderPrev(el); });
@@ -75,7 +83,7 @@
   function kandidat() {
     if (B.kontak) return B.kontak.map(k => ({ id: k.id, nama: k.nama, no_hp: k.no_wa, status_wa: k.status_wa, prodi: (k.info || {}).prodi || '', jalur: (k.info || {}).jalur || '', respon: (k.info || {}).respon || '', optout: k.opt_out }));
     if (B.ids) { const s = new Set(B.ids); return App.P.filter(p => s.has(p.id)); }
-    return App.P.filter(p => (B.respon === 'Umum' || p.respon === B.respon) && (!B.jalur.size || B.jalur.has(p.jalur)) && (!B.prodi.size || B.prodi.has(p.prodi)));
+    return App.P.filter(p => cocokRespon(p, B.respon) && (!B.jalur.size || B.jalur.has(p.jalur)) && (!B.prodi.size || B.prodi.has(p.prodi)));
   }
   function analisa() {
     const opt = new Set(W().optout || []), seen = new Set(), ok = [], lewat = [];
@@ -99,7 +107,7 @@
   }
   function renderKiri(el) {
     const A = analisa(), tpl = W().templat, filt = tpl.filter(t => t.untuk_respon === B.respon || t.untuk_respon === 'Umum' || B.respon === 'Umum');
-    const hit = r => App.P.filter(p => (r === 'Umum' || p.respon === r) && (!B.jalur.size || B.jalur.has(p.jalur)) && (!B.prodi.size || B.prodi.has(p.prodi))).length;
+    const hit = r => App.P.filter(p => cocokRespon(p, r) && (!B.jalur.size || B.jalur.has(p.jalur)) && (!B.prodi.size || B.prodi.has(p.prodi))).length;
     const g = Object.keys(jsonS('VARIABEL_PESAN', {}));
     const step = B.konfirmasi ? 3 : (A.ok.length ? 2 : 1);
     el.querySelector('[data-r="step"]').innerHTML = [['Pilih Penerima Target', 1], ['Tulis Pesan & Variabel', 2], ['Konfirmasi & Pengiriman', 3]].map(s =>
@@ -109,7 +117,8 @@
       '<div class="card card-pad" id="kart1"><div class="row-between mb16"><div class="section-title" style="margin:0"><span class="bar"></span>1. Kelompok Penerima</div><span class="badge b-peach plain">Wajib diisi</span></div>' +
       (mode ? '<div class="callout info mb16">' + ic('info', 'sm') + '<div>' + esc(mode) + '. <button class="btn btn-ghost btn-sm" data-act="lepas">Gunakan filter respon</button></div></div>' : '') +
       '<div class="rcards mb16" ' + (mode ? 'style="opacity:.5"' : '') + '>' + RESP.map(r => '<button class="rcard ' + (B.respon === r[0] && !mode ? 'on' : '') + '" data-resp="' + r[0] + '" style="--tint:var(' + r[3] + ');--fg:var(' + r[4] + ')"><div class="rt"><span class="rdot">' + (B.respon === r[0] && !mode ? ic('check', 'sm') : '') + '</span><span class="badge plain" style="background:#fff;color:var(' + r[4] + ')">' + r[1] + '</span></div><div class="rn">' + r[2] + '</div><div class="rv">' + F.n(hit(r[0])) + '<small>pendaftar</small></div></button>').join('') + '</div>' +
-      '<div class="chips mb8"><span class="chip-row-label">Filter jalur:</span><button class="chip ' + (!B.jalur.size ? 'on' : '') + '" data-act="semua-jalur">Semua jalur</button>' + JALUR.map(j => '<button class="chip ' + (B.jalur.has(j) ? 'on' : '') + '" data-jalur="' + j + '">' + j + ' <span class="n">' + App.P.filter(p => p.jalur === j && (B.respon === 'Umum' || p.respon === B.respon)).length + '</span></button>').join('') + '</div>' +
+      '<div class="chips mb8"><span class="chip-row-label">Filter jalur:</span><button class="chip ' + (!B.jalur.size ? 'on' : '') + '" data-act="semua-jalur">Semua jalur</button>' + JALUR.map(j => '<button class="chip ' + (B.jalur.has(j) ? 'on' : '') + '" data-jalur="' + j + '">' + j + ' <span class="n">' + App.P.filter(p => p.jalur === j && cocokRespon(p, B.respon)).length + '</span></button>').join('') + '</div>' +
+      (B.respon === 'Sudah Registrasi' && !mode ? '<div class="chips mb8"><span class="chip-row-label">Status bayar:</span>' + BAYAR.map(x => '<button class="chip ' + (B.bayar === x[0] ? 'on' : '') + '" data-bayar="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>' : '') +
       '<div class="chips mb16"><span class="chip-row-label">Program studi:</span><button class="chip ' + (!B.prodi.size ? 'on' : '') + '" data-act="semua-prodi">Semua prodi</button>' + PRODI.map(p => '<button class="chip ' + (B.prodi.has(p) ? 'on' : '') + '" data-prodi="' + p + '">' + p + ' (' + esc(prodiLabel(p)) + ')</button>').join('') + '</div>' +
       '<label class="check mb16"><span class="switch"><input type="checkbox" id="bHanyaWA" ' + (B.hanyaWA ? 'checked' : '') + '></span> Lewati nomor yang terdeteksi bukan WhatsApp</label>' +
       '<div style="background:#FFF6EE;border-radius:16px;padding:14px" data-r="ringkas"></div></div>' +
@@ -148,9 +157,10 @@
       (A.ok.length > (k.batasBlast || 300) ? '<div class="callout bad mb16">' + ic('circle-x', 'sm') + 'Melebihi batas ' + (k.batasBlast || 300) + ' penerima per blast. Persempit filter jalur/prodi.</div>' : '') +
       '<div class="form-grid"><div class="field"><label>Ukuran batch</label><div class="seg">' + [10, 20, 50].map(n => '<button class="' + (batch === n ? 'on' : '') + '" data-act="batch" data-n="' + n + '">' + n + '</button>').join('') + '</div><div class="help">Mulai dari 10 untuk nomor yang baru dipakai blast.</div></div>' +
       '<div class="field"><label>Jeda antarpesan (detik)</label><input class="input" id="bJeda" value="' + esc(jeda) + '" placeholder="8-15"><div class="help">Rentang acak, mis. 8-15.</div></div></div>' +
-      '<div class="flabel mb8">Contoh pesan untuk ' + esc((A.ok[0] || {}).nama || '-') + '</div><div class="bubble mb16" style="margin-left:0">' + waFmt(isiVar(B.pesan, vars(A.ok[0] || {}))) + '</div>' +
+      '<div class="flabel mb8">Contoh pesan untuk ' + esc((A.ok[0] || {}).nama || '-') + '</div><div class="bubble mb16" style="margin-left:0">' + waFmtTanda(isiVar(B.pesan, vars(A.ok[0] || {}))) + '</div>' +
+      (varKosong(isiVar(B.pesan, vars(A.ok[0] || {}))).length ? '<div class="callout bad mb16">' + ic('circle-x', 'sm') + '<div>Variabel <b>' + esc(varKosong(isiVar(B.pesan, vars(A.ok[0] || {}))).join(', ')) + '</b> belum punya nilai sehingga akan terkirim apa adanya. Isi di <a href="#/pengaturan">Pengaturan → Variabel pesan global</a> atau hapus dari pesan.</div></div>' : '') +
       '<label class="check mb16"><input type="checkbox" id="bYakin" ' + (B.yakin ? 'checked' : '') + '> Saya sudah memeriksa penerima dan isi pesan. Pesan relevan dengan pendaftaran dan memberi cara berhenti.</label>' +
-      '<div class="row" style="justify-content:flex-end"><button class="btn btn-ghost" data-act="kembali">' + ic('arrow-left') + 'Ubah pesan</button><button class="btn btn-primary" data-act="mulai" ' + (A.ok.length ? '' : 'disabled') + '>' + ic('send') + 'Mulai Blast (' + F.n(A.ok.length) + ' nomor)</button></div></div>';
+      '<div class="row" style="justify-content:flex-end"><button class="btn btn-ghost" data-act="kembali">' + ic('arrow-left') + 'Ubah pesan</button><button class="btn btn-primary" data-act="mulai" ' + (A.ok.length && !varKosong(isiVar(B.pesan, vars(A.ok[0] || {}))).length ? '' : 'disabled') + '>' + ic('send') + 'Mulai Blast (' + F.n(A.ok.length) + ' nomor)</button></div></div>';
   }
   function renderKanan(el) {
     const box = el.querySelector('[data-r="kanan"]'); if (!box) return;
@@ -164,7 +174,9 @@
   function renderPrev(el) {
     const b = el.querySelector('[data-r="prev"]'); if (!b) return;
     const p = analisa().ok[0] || { nama: 'Ahmad Fauzi', prodi: 'HES', jalur: 'Reguler' };
-    b.innerHTML = (B.pesan ? waFmt(isiVar(B.pesan, vars(p))) : '<span class="muted">Pesan akan tampil di sini…</span>') + '<div class="bt">' + F.jam(new Date()) + ' ✓✓</div>';
+    const kosong = varKosong(isiVar(B.pesan, vars(p)));
+    b.innerHTML = (B.pesan ? waFmtTanda(isiVar(B.pesan, vars(p))) : '<span class="muted">Pesan akan tampil di sini…</span>') + '<div class="bt">' + F.jam(new Date()) + ' ✓✓</div>' +
+      (kosong.length ? '<div class="small" style="color:var(--bad-fg);margin-top:6px">⚠ ' + esc(kosong.join(', ')) + ' belum diisi</div>' : '');
   }
   async function aksi(el, b) {
     const a = b.dataset.act;
@@ -193,7 +205,7 @@
       const A = analisa();
       if (!(await confirmBox({ title: 'Kirim ke ' + A.ok.length + ' nomor?', pesan: 'Pesan masuk antrean dan dikirim bertahap per batch ' + (B.batch || S().WA_BATCH || 20) + ' dengan jeda ' + (B.jeda || S().WA_JEDA) + ' detik. Blast bisa dihentikan kapan saja.', ok: 'Ya, mulai blast' }))) return;
       busy(b, true, 'Membuat antrean…');
-      const r = await api('blastBuat', { judul: B.judul, pesan: B.pesan, templatId: B.templatId, respon: B.kontak || B.ids ? 'Pilihan manual' : B.respon,
+      const r = await api('blastBuat', { judul: B.judul, pesan: B.pesan, templatId: B.templatId, respon: B.kontak || B.ids ? 'Pilihan manual' : B.respon + (B.respon === 'Sudah Registrasi' && B.bayar ? ' • ' + BAYAR.find(x => x[0] === B.bayar)[1] : ''),
         filter: { jalur: Array.from(B.jalur), prodi: Array.from(B.prodi) }, ids: B.kontak ? [] : A.ok.map(p => p.id), kontakIds: B.kontak ? A.ok.map(p => p.id) : [],
         hanyaWA: B.hanyaWA, ukuranBatch: B.batch || Number(S().WA_BATCH) || 20, jeda: B.jeda || S().WA_JEDA });
       busy(b, false);
@@ -228,7 +240,7 @@
   function tikOtomatis(el) {
     if (App.cur !== 'blast' || document.hidden) return;
     const b = blastAktif(), cd = $('#bCd');
-    if (b && Date.now() - _poll > 15000) { _poll = Date.now(); syncNow(['wa'], true); }
+    if (b && Activity.due('blastPoll', 15000, 60000)) syncNow(['wa'], true);
     if (!b || !B.auto || !B.next) { if (cd) cd.textContent = ''; return; }
     const s = Math.max(0, Math.round((B.next - Date.now()) / 1000));
     if (cd) cd.textContent = '· batch berikutnya ' + s + ' dtk';
@@ -272,7 +284,7 @@
         '<span class="small muted" style="max-width:420px">' + ic('info', 'sm') + ' Variabel seperti {nama} dan {prodi} diisi otomatis dari database calon mahasiswa.</span>';
       const isi = el.querySelector('[data-r="isi"]');
       if (P.tab === 'templat') isi.innerHTML = w.templat.length ? '<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))">' + w.templat.map(t => {
-        const v = Array.from(new Set((t.isi_pesan.match(/\{\w+\}/g) || []))), c = ({ 'Belum Tes': 'b-warn', 'Belum Daftar Ulang': 'b-info', 'Mengundurkan Diri': 'b-bad' }[t.untuk_respon] || 'b-peach');
+        const v = Array.from(new Set((t.isi_pesan.match(/\{\w+\}/g) || []))), c = ({ 'Belum Tes': 'b-warn', 'Belum Daftar Ulang': 'b-info', 'Mengundurkan Diri': 'b-bad', 'Sudah Registrasi': 'b-ok' }[t.untuk_respon] || 'b-peach');
         return '<div class="tpl-card"><div class="row-between"><span class="badge plain ' + c + '">' + esc(t.untuk_respon) + '</span>' + ic('message-square', 'sm') + '</div><h4>' + esc(t.nama_templat) + '</h4><div class="tpl-prev">' + esc(t.isi_pesan) + '</div>' +
           '<div><div class="flabel" style="color:var(--muted)">Variabel aktif</div><div class="chips mt8">' + v.map(x => '<span class="tag-mini">' + esc(x) + '</span>').join('') + '</div></div>' +
           '<div class="row-between small muted" style="margin-top:auto"><span>Dibuat: ' + F.tgl(t.dibuat) + '</span><span class="terracotta">Terpakai ' + t.dipakai + 'x</span></div>' +
@@ -321,7 +333,7 @@
     const g = Object.keys(jsonS('VARIABEL_PESAN', {}));
     const m = modal({ title: t.id ? 'Ubah templat' : 'Templat baru', size: 'wide',
       body: '<div class="form-grid"><div class="field"><label>Nama templat *</label><input class="input" id="tN" value="' + esc(t.nama_templat || '') + '"></div>' +
-        '<div class="field"><label>Untuk kelompok respon</label><select class="select" id="tR">' + ['Belum Tes', 'Belum Daftar Ulang', 'Mengundurkan Diri', 'Umum'].map(r => '<option ' + (t.untuk_respon === r ? 'selected' : '') + '>' + r + '</option>').join('') + '</select></div></div>' +
+        '<div class="field"><label>Untuk kelompok respon</label><select class="select" id="tR">' + ['Belum Tes', 'Belum Daftar Ulang', 'Mengundurkan Diri', 'Sudah Registrasi', 'Umum'].map(r => '<option ' + (t.untuk_respon === r ? 'selected' : '') + '>' + r + '</option>').join('') + '</select></div></div>' +
         '<div class="chips mb8">' + ['nama', 'prodi', 'prodi_lengkap', 'jalur', 'institusi', 'gelombang'].concat(g).map(v => '<button class="var-chip" data-v="{' + v + '}">+ {' + v + '}</button>').join('') + '</div>' +
         '<div class="grid g2"><div class="field"><label>Isi pesan *</label><textarea class="textarea" id="tI" rows="10">' + esc(t.isi_pesan || '') + '</textarea></div><div><div class="flabel mb8">Pratinjau</div><div class="bubble" id="tP" style="margin-left:0"></div></div></div>',
       foot: '<button class="btn btn-ghost" data-x>Batal</button><button class="btn btn-primary" id="tOk">Simpan Templat</button>' });

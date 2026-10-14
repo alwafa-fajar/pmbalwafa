@@ -17,7 +17,7 @@
       delegate(el, 'click', '[data-act]', b => aksi(el, b));
       delegate(el, 'click', '[data-f]', b => { st.filter = b.dataset.f; Pages.dokumen.render(el); });
       el.addEventListener('input', debounce(e => { if (e.target.matches('[data-q]')) { st.q = e.target.value; isiArsip(el); } }, 250));
-      setInterval(() => { if (App.cur !== 'dokumen' || document.hidden) return; if (D().dokumen.some(d => d.status === 'MEMPROSES') || D().jobs.some(j => j.menunggu)) syncNow(['de'], true); }, 9000);
+      setInterval(() => { if (App.cur !== 'dokumen' || !Activity.due('dePoll', 9000, 45000)) return; if (D().dokumen.some(d => d.status === 'MEMPROSES') || D().jobs.some(j => j.menunggu)) syncNow(['de'], true); }, 9000);
     },
     render(el, param) {
       if (param && param !== st.tab && ['buat', 'arsip', 'templat', 'pejabat', 'massal'].indexOf(param) > -1) { st.tab = param; Pages.dokumen._param = ''; history.replaceState(null, '', '#/dokumen'); }

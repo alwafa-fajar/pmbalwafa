@@ -1,18 +1,20 @@
 /* dasbor.js — Dasbor Pendaftar (PRD F2, 7.3) */
 'use strict';
 (function () {
-  const st = { tab: 'semua', mode: 'harian' };
+  const st = { tab: 'semua', mode: 'harian', tl: 'pekan' };
   const TAB = { semua: JALUR, Reguler: ['Reguler'], Sore: ['Sore'], Inter: ['Inter Ikhwan', 'Inter Akhwat'] };
   const WARNA = { calon: ['--rose-bg', '--rose-fg', '#E7998F'], du: ['--butter-bg', '--butter-fg', '#E9C25A'], ukt: ['--sage-bg', '--sage-fg', '#7FB894'],
     real: ['--cream-bg', '--cream-fg', '#F28C4B'], tdu: ['--blue-bg', '--blue-fg', '#7FA9CF'] };
   const sty = k => 'style="--tint:var(' + WARNA[k][0] + ');--fg:var(' + WARNA[k][1] + ');--accent:' + WARNA[k][2] + '"';
 
   registerPage('dasbor', {
-    title: 'Dasbor', deps: ['ringkasan', 'snapshot', 'meta'],
+    title: 'Dasbor', deps: ['ringkasan', 'snapshot', 'meta', 'rapat'],
     template: () => '<div data-r="head"></div><div class="row mb22" data-r="tabs"></div><div class="dash-grid" data-r="grid"></div><div class="card mt22" data-r="chart"></div><div data-r="foot"></div>',
     mount(el) {
       delegate(el, 'click', '[data-tab]', b => { st.tab = b.dataset.tab; Pages.dasbor.render(el); });
       delegate(el, 'click', '[data-mode]', b => { st.mode = b.dataset.mode; gambarGrafik(el); });
+      delegate(el, 'click', '[data-tl]', b => { st.tl = b.dataset.tl; const k = el.querySelector('[data-r="tl"]'); if (k) k.outerHTML = kartuTL(); });
+      delegate(el, 'change', '[data-poin]', c => { const x = c.dataset.poin.split('|'); window.RapatPoin.toggle(x[0], x[1], c.checked); });
       delegate(el, 'click', '[data-act]', b => {
         const a = b.dataset.act;
         if (a === 'excel') eksporDasbor();
@@ -36,8 +38,8 @@
       const g = el.querySelector('[data-r="grid"]');
       if (!R || !R.total) {
         g.innerHTML = '<div class="card card-pad" style="grid-column:1/-1">' + emptyBox('clipboard-paste', 'Belum ada data pendaftar', 'Tempel data dari Excel di menu Data Mahasiswa untuk mengisi dasbor.',
-          isAdmin() ? '<button class="btn btn-primary" data-act="tempel">' + ic('clipboard-paste') + 'Tempel Data</button>' : '') + '</div>';
-      } else g.innerHTML = kartuCalon(R) + kartuDU(R) + kartuUKT(R) + kartuReal(R) + kartuTahfizh(R);
+          isAdmin() ? '<button class="btn btn-primary" data-act="tempel">' + ic('clipboard-paste') + 'Tempel Data</button>' : '') + '</div>' + kartuTL();
+      } else g.innerHTML = kartuCalon(R) + kartuDU(R) + kartuUKT(R) + kartuReal(R) + kartuTahfizh(R) + kartuTL();
       el.querySelector('[data-r="foot"]').innerHTML = '<div class="foot-note"><span>' + ic('cloud-upload', 'sm') + ' Angka dihitung di server dari sheet PENDAFTAR dan disimpan sementara agar cepat.</span><span>Otoritas: PMB ' + esc(s.NAMA_INSTITUSI || 'STIS Al Wafa') + '</span></div>';
       gambarGrafik(el);
     }
@@ -46,9 +48,36 @@
   const J = () => TAB[st.tab];
   const tot = (R, k) => ringkasMatriks(R, k, J());
   const jumJ = (R, k, j) => PRODI.reduce((a, p) => a + R.m[k][j][p], 0);
-  function kotakJalur(R, k, kelas) {
-    return '<div class="jalur-grid n' + J().length + '">' + J().map(j => '<div class="jbox ' + (kelas || '') + '"><div class="jh"><span>' + esc(j) + '</span><b>' + F.n(jumJ(R, k, j)) + '</b></div>' +
-      '<div class="pgrid">' + PRODI.map(p => '<div class="pcell">' + p + ' <b>' + F.n(R.m[k][j][p]) + '</b></div>').join('') + '</div></div>').join('') + '</div>';
+  function kotakJalur(R, k) {
+    const kotak = J().filter(j => !/^Inter/.test(j)).map(j => '<div class="jbox"><div class="jh"><span>' + esc(j) + '</span><b>' + F.n(jumJ(R, k, j)) + '</b></div>' +
+      '<div class="pgrid">' + PRODI.map(p => '<div class="pcell">' + p + ' <b>' + F.n(R.m[k][j][p]) + '</b></div>').join('') + '</div></div>');
+    const inter = J().filter(j => /^Inter/.test(j));            // Internasional hanya 1 prodi → cukup Ikhwan & Akhwat
+    if (inter.length) kotak.push('<div class="jbox"><div class="jh"><span>Internasional</span><b>' + F.n(inter.reduce((a, j) => a + jumJ(R, k, j), 0)) + '</b></div>' +
+      '<div class="irows">' + inter.map(j => '<div class="pcell">' + (j === 'Inter Ikhwan' ? 'Ikhwan' : 'Akhwat') + ' <b>' + F.n(jumJ(R, k, j)) + '</b></div>').join('') + '</div></div>');
+    return '<div class="jalur-grid n' + kotak.length + '">' + kotak.join('') + '</div>';
+  }
+  /* ------------------ Tindak lanjut rapat (pengingat Tim) ------------------ */
+  function periodeTL() {
+    const n = new Date(), a = st.tl === 'pekan' ? new Date(n.getFullYear(), n.getMonth(), n.getDate() - ((n.getDay() + 6) % 7)) : new Date(n.getFullYear(), n.getMonth(), 1);
+    const b = st.tl === 'pekan' ? new Date(a.getFullYear(), a.getMonth(), a.getDate() + 7) : new Date(n.getFullYear(), n.getMonth() + 1, 1);
+    return [a, b];
+  }
+  function kartuTL() {
+    const [a, b] = periodeTL(), item = [];
+    (App.data.rapat || []).forEach(c => { const d = tglObj(c.tanggal); if (d && d >= a && d < b) (c.poin || []).forEach(p => item.push({ c, p })); });
+    item.sort((x, y) => (x.p.selesai - y.p.selesai) || String(y.c.tanggal).localeCompare(String(x.c.tanggal)));
+    const sel = item.filter(x => x.p.selesai).length, tampil = item.slice(0, 8);
+    const nama = u => { const x = ((App.data.meta || {}).users || []).find(v => v.username === u); return x ? x.nama : u; };
+    return '<div class="phase tl-card" data-r="tl" style="--tint:var(--primary-tint);--fg:var(--primary-dark);--accent:#B8531F">' +
+      '<div class="phase-top"><div class="phase-label"><span class="fase">Pengingat</span>Tindak lanjut rapat</div>' +
+      '<div class="seg"><button class="' + (st.tl === 'pekan' ? 'on' : '') + '" data-tl="pekan">Pekan ini</button><button class="' + (st.tl === 'bulan' ? 'on' : '') + '" data-tl="bulan">Bulan ini</button></div></div>' +
+      (item.length ? '<div class="row-between mt12"><span class="small muted"><b class="terracotta">' + sel + '</b> dari ' + item.length + ' poin terealisasi</span><span class="small bold">' + F.pct(sel, item.length, 0) + '</span></div>' +
+        '<div class="progress ok"><i style="width:' + (sel * 100 / item.length) + '%"></i></div><div class="todo-list">' +
+        tampil.map(x => '<label class="todo' + (x.p.selesai ? ' done' : '') + '"><span class="check"><input type="checkbox" data-poin="' + x.c.id + '|' + esc(x.p.id) + '" ' + (x.p.selesai ? 'checked' : '') + '></span>' +
+          '<span><span class="tt">' + esc(x.p.teks) + '</span><small>' + esc(x.c.judul) + ' · ' + F.tgl(x.c.tanggal) + (x.p.selesai ? ' · ✓ ' + esc(nama(x.p.selesai_oleh)) : (x.c.penanggung_jawab ? ' · PJ ' + esc(x.c.penanggung_jawab) : '')) + '</small></span></label>').join('') + '</div>' +
+        (item.length > tampil.length ? '<p class="small muted mt8">+' + (item.length - tampil.length) + ' poin lainnya</p>' : '')
+        : '<div class="empty" style="padding:22px 8px">' + ic('list-checks', 'lg') + '<div>Belum ada keputusan rapat ' + (st.tl === 'pekan' ? 'pekan' : 'bulan') + ' ini.</div></div>') +
+      '<a class="btn btn-soft btn-sm mt12" href="#/rapat">' + ic('notebook-pen', 'sm') + 'Buka Catatan Rapat</a></div>';
   }
   function kepala(fase, label, ikon) {
     return '<div class="phase-top"><div class="phase-label"><span class="fase">' + fase + '</span>' + label + '</div><div class="phase-ico">' + ic(ikon, 'lg') + '</div></div>';

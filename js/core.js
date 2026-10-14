@@ -17,7 +17,7 @@ const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ic = (n, cls) => { const b = (window.ICONS || {})[n]; if (!b) { console.warn('Ikon hilang:', n); return ''; }
   return '<svg class="ic ' + (cls || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + b + '</svg>'; };
-function delegate(root, type, sel, fn) { root.addEventListener(type, e => { const t = e.target.closest(sel); if (t && root.contains(t)) fn(t, e); }); }
+function delegate(root, type, sel, fn) { root.addEventListener(type, e => { const t = e.target.closest(sel); if (t && t !== root && root.contains(t)) fn(t, e); }); }
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 const bus = {};
 function on(ev, fn) { (bus[ev] = bus[ev] || []).push(fn); }
@@ -87,7 +87,7 @@ function muatCache() {
 function hapusCacheUser() { Object.keys(localStorage).filter(x => x.indexOf(LS + ukey('')) === 0).forEach(x => localStorage.removeItem(x)); }
 
 /* ------------------------------- Perf --------------------------------- */
-const Perf = { rows: [], add(a, t, s) { this.rows.push({ aksi: a, total: t, server: s, jaringan: s != null ? t - s : null }); if (this.rows.length > 200) this.rows.shift(); }, table() { console.table(this.rows.slice(-30)); } };
+const Perf = { rows: [], summary() { const g = {}; this.rows.forEach(r => { const x = g[r.aksi] = g[r.aksi] || { n: 0, total: 0, server: 0 }; x.n++; x.total += r.total; x.server += r.server || 0; }); console.table(Object.keys(g).map(k => ({ aksi: k, panggilan: g[k].n, rata_total: Math.round(g[k].total / g[k].n), rata_server: Math.round(g[k].server / g[k].n) }))); }, add(a, t, s) { this.rows.push({ aksi: a, total: t, server: s, jaringan: s != null ? t - s : null }); if (this.rows.length > 200) this.rows.shift(); }, table() { console.table(this.rows.slice(-30)); } };
 window.Perf = Perf;
 
 /* -------------------------------- API --------------------------------- */
@@ -109,7 +109,34 @@ async function apiOnce(action, data, timeout, reqId) {
   } finally { clearTimeout(timer); }
 }
 function waitOnline(ms) { return new Promise(r => { if (navigator.onLine !== false) return r(); const t = setTimeout(done, ms); function done() { clearTimeout(t); removeEventListener('online', done); r(); } addEventListener('online', done); }); }
+/* gas-scale-turbo 4.2–4.3: baca identik yang sedang berjalan menumpang (epoch tulis mencegah data basi),
+   baca berbeda di tik yang sama digabung menjadi satu eksekusi 'batch'. */
+const BATCHABLE = /^(sync|waStatus|crmList|antrianList|logList|blastDetail)$/;
+const _inflight = {}; let _writeEpoch = 0;
+const Batcher = {
+  q: null,
+  add(action, data, opt) { return new Promise(res => { if (!this.q) { this.q = []; setTimeout(() => this.flush(), 0); } this.q.push({ action, data, opt, res }); }); },
+  async flush() {
+    const q = this.q; this.q = null; const perAksi = {}, sendiri = [];
+    q.forEach(it => { if (!perAksi[it.action]) perAksi[it.action] = it; else sendiri.push(it); });
+    const grup = Object.values(perAksi);
+    if (grup.length > 1 && App.token) {
+      const r = await apiRun('batch', { calls: grup.map(u => ({ action: u.action, data: u.data || {} })) }, {});
+      grup.forEach(u => u.res(r.success && r.data[u.action] ? r.data[u.action] : (r.success ? { success: false, message: 'Tidak ada hasil batch.' } : r)));
+    } else sendiri.push(...grup);
+    sendiri.forEach(u => apiRun(u.action, u.data, u.opt).then(u.res));
+  }
+};
 async function api(action, data, opt) {
+  opt = opt || {};
+  if (!READ.test(action)) { _writeEpoch++; return apiRun(action, data, opt); }
+  const k = _writeEpoch + '|' + action + '|' + JSON.stringify(data || {});
+  if (_inflight[k]) return _inflight[k];
+  const p = BATCHABLE.test(action) && opt.batch !== false ? Batcher.add(action, data, opt).then(r => { if (r.sync) applySync(r.sync); if (!r.success && r.code === 'AUTH') emit('auth-expired', r); return r; }) : apiRun(action, data, opt);
+  _inflight[k] = p; p.then(() => delete _inflight[k], () => delete _inflight[k]);
+  return p;
+}
+async function apiRun(action, data, opt) {
   opt = opt || {};
   if (!window.GAS_URL || /XXXX/.test(window.GAS_URL)) return { success: false, message: 'GAS_URL di js/config.js belum diisi.' };
   const isRead = READ.test(action), reqId = isRead ? '' : (opt.reqId || (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random()));
@@ -120,11 +147,29 @@ async function api(action, data, opt) {
     res = await apiOnce(action, data, opt.timeout || (isRead ? (i ? 40000 : 25000) : 90000), reqId);
     if (res.success || !res.retryable) break;
   }
+  if (res.v) App.serverV = res.v;
   if (res.sync) applySync(res.sync);
   if (!res.success && res.code === 'AUTH' && action !== 'login') emit('auth-expired', res);
   return res;
 }
-function warmUp() { if (window.GAS_URL && !/XXXX/.test(window.GAS_URL)) fetch(window.GAS_URL + '?ping=' + Date.now(), { mode: 'no-cors', cache: 'no-store' }).catch(() => { }); }
+function warmUp(scope) {
+  scope = scope || 'admin';
+  if (!window.GAS_URL || /XXXX/.test(window.GAS_URL)) return;
+  try { const k = LS + 'warm_' + scope; if (Date.now() - Number(sessionStorage.getItem(k) || 0) < 240000) return; sessionStorage.setItem(k, String(Date.now())); } catch (e) { }
+  fetch(window.GAS_URL + (window.GAS_URL.indexOf('?') > -1 ? '&' : '?') + 'w=' + scope + '&t=' + Date.now(), { mode: 'no-cors', cache: 'no-store' }).catch(() => { });
+}
+const Activity = {
+  at: Date.now(), last: {},
+  init() { ['pointerdown', 'keydown', 'wheel', 'touchstart', 'focus'].forEach(ev => addEventListener(ev, () => { this.at = Date.now(); }, { passive: true })); },
+  idle() { return Date.now() - this.at > 120000; },
+  /** true bila sudah waktunya: aktif = activeMs, diam > 2 menit = idleMs, tab tersembunyi = tidak pernah */
+  due(key, activeMs, idleMs) {
+    if (document.visibilityState !== 'visible') return false;
+    if (Date.now() - (this.last[key] || 0) < (this.idle() ? idleMs : activeMs) - 500) return false;
+    this.last[key] = Date.now(); return true;
+  }
+};
+Activity.init();
 
 /* ---------------------------- Sinkron data ---------------------------- */
 function decodeP(ds) {
@@ -136,6 +181,7 @@ function parseFlags(s) { return { U: s.includes('U'), D: s.includes('D'), K: s.i
 function applySync(s) {
   if (!s) return;
   const changed = Object.keys(s.data || {});
+  if (s.data && Array.isArray(s.data.rapat)) s.data.rapat.forEach(c => { if (!Array.isArray(c.poin)) c.poin = String(c.keputusan_tindak_lanjut || '').split(/\r?\n/).map(x => x.replace(/^\s*(\d+[.)]|[-•*])\s*/, '').trim()).filter(Boolean).map((t, i) => ({ id: 'L' + (i + 1), teks: t, selesai: c.status_tindak_lanjut === 'Selesai' })); });
   changed.forEach(n => { App.data[n] = s.data[n]; if (n === 'pendaftar') App.P = decodeP(s.data[n]); Store.set(ukey('ds:' + n), s.data[n]); });
   Object.assign(App.vers, s.vers || {});
   App.lastSync = Date.now();
@@ -242,9 +288,9 @@ function emptyBox(ikon, judul, teks, aksi) { return '<div class="empty"><div cla
 function pagerHtml(total, page, per) {
   const n = Math.max(1, Math.ceil(total / per)); if (n <= 1) return '';
   const set = new Set([1, n, page - 1, page, page + 1].filter(x => x >= 1 && x <= n)), arr = Array.from(set).sort((a, b) => a - b);
-  let out = '<div class="pager"><button data-page="' + (page - 1) + '" ' + (page <= 1 ? 'disabled' : '') + ' aria-label="Sebelumnya">' + ic('chevron-left', 'sm') + '</button>', prev = 0;
-  arr.forEach(p => { if (p - prev > 1) out += '<span class="muted">…</span>'; out += '<button data-page="' + p + '" class="' + (p === page ? 'on' : '') + '">' + p + '</button>'; prev = p; });
-  return out + '<button data-page="' + (page + 1) + '" ' + (page >= n ? 'disabled' : '') + ' aria-label="Berikutnya">' + ic('chevron-right', 'sm') + '</button></div>';
+  let out = '<div class="pager"><button data-pg="' + (page - 1) + '" ' + (page <= 1 ? 'disabled' : '') + ' aria-label="Sebelumnya">' + ic('chevron-left', 'sm') + '</button>', prev = 0;
+  arr.forEach(p => { if (p - prev > 1) out += '<span class="muted">…</span>'; out += '<button data-pg="' + p + '" class="' + (p === page ? 'on' : '') + '">' + p + '</button>'; prev = p; });
+  return out + '<button data-pg="' + (page + 1) + '" ' + (page >= n ? 'disabled' : '') + ' aria-label="Berikutnya">' + ic('chevron-right', 'sm') + '</button></div>';
 }
 
 /* ------------------------- Label status pendaftar ---------------------- */
@@ -267,6 +313,7 @@ async function unduhXlsx(namaFile, sheets, jenisLog) {
     let baris = 0;
     sheets.forEach(s => {
       const ws = XLSX.utils.aoa_to_sheet(s.aoa);
+      (s.links || []).forEach(l => { const a = XLSX.utils.encode_cell({ r: l.r, c: l.c }); if (ws[a]) ws[a].l = { Target: l.url, Tooltip: l.tip || 'Buka' }; });
       ws['!cols'] = (s.aoa[s.head || 0] || []).map((_, ci) => ({ wch: Math.min(48, Math.max(6, ...s.aoa.slice(0, 300).map(r => String(r[ci] == null ? '' : r[ci]).length + 2))) }));
       let nm = String(s.nama).replace(/[\\\/?*\[\]:]/g, '-').slice(0, 31) || 'Sheet';
       while (dipakai[nm]) nm = nm.slice(0, 28) + '-' + Math.floor(Math.random() * 99);

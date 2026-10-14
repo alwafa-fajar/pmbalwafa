@@ -12,7 +12,7 @@
       delegate(el, 'click', '[data-kpi]', b => { const k = b.dataset.kpi; Object.assign(st, { statusWA: '', optOut: '', dup: false, masalah: false });
         if (k === 'wa') st.statusWA = 'Terdaftar'; if (k === 'belum') st.statusWA = 'belum'; if (k === 'opt') st.optOut = 'ya'; if (k === 'dup') st.dup = true; if (k === 'masalah') st.masalah = true; st.halaman = 1; muat(el); });
       delegate(el, 'click', '[data-seg]', b => { st.segmen = st.segmen === b.dataset.seg ? '' : b.dataset.seg; st.halaman = 1; muat(el); });
-      delegate(el, 'click', '[data-page]', b => { if (!b.disabled) { st.halaman = +b.dataset.page; muat(el); } });
+      delegate(el, 'click', '[data-pg]', b => { if (!b.disabled) { st.halaman = +b.dataset.pg; muat(el); } });
       delegate(el, 'change', '[data-f]', s => { st[s.dataset.f] = s.value; st.halaman = 1; muat(el); });
       delegate(el, 'change', '[data-cek]', c => { c.checked ? st.sel.add(c.dataset.cek) : st.sel.delete(c.dataset.cek); renderBulk(el); });
       delegate(el, 'change', '[data-cekall]', c => { (st.data ? st.data.rows : []).forEach(k => c.checked ? st.sel.add(k.id) : st.sel.delete(k.id)); renderList(el); renderBulk(el); });
